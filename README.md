@@ -50,6 +50,15 @@ You'll paste this into the setup wizard, or pass it to `gen-config`/an
 install-time environment variable — never into a config file checked into
 source control.
 
+### Get the code
+
+```sh
+git clone https://github.com/ishanj12/fleet-connector.git
+cd fleet-connector
+```
+
+Every command below is run from inside this directory.
+
 ## Quick start (either OS, no packaging)
 
 The fastest way to try it out — build the binary and run it in the
