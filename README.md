@@ -106,12 +106,26 @@ connection.
 
 ## Installing on Windows
 
+The commands below are PowerShell, run **on the Windows machine** — clone
+the repo there first (same command as [above](#get-the-code), it works
+identically in PowerShell):
+
+```powershell
+git clone https://github.com/ishanj12/fleet-connector.git
+cd fleet-connector
+```
+
 ### 1. Build the binary
 
 ```powershell
 $env:GOOS = "windows"; $env:GOARCH = "amd64"
 go build -o fleetconnect.exe ./cmd/fleetconnect
 ```
+
+(`$env:GOOS`/`$env:GOARCH` are redundant if you're already building natively
+on Windows/amd64 — Go defaults to your current platform. They're here so
+this same command also works if you instead cross-compile from a Mac/Linux
+box and copy the resulting `fleetconnect.exe` over for step 2.)
 
 ### 2. Build the MSI
 
@@ -170,6 +184,9 @@ revoke the credential via ngrok's Credentials API as part of
 decommissioning, then delete the file yourself if you want it gone.
 
 ## Installing on Linux
+
+Run on the target Linux machine (clone the repo there first, [as above](#get-the-code)) —
+or cross-compile elsewhere and copy `fleetconnect` + `installer/linux/` over.
 
 ### 1. Build the binary
 
