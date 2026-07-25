@@ -1,0 +1,18 @@
+# Build outputs
+/fleetconnect
+/fleetconnect.exe
+/dist/
+*.msi
+*.wixobj
+*.wixpdb
+.wix/
+
+# Local runtime artifacts — never commit a real config or log
+/fleetconnect.log
+config.yaml
+*.deb
+*.rpm
+
+# Editor / OS cruft
+.DS_Store
+.claude/

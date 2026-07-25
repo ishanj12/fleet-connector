@@ -1,0 +1,152 @@
+{{define "hidden_endpoint_fields"}}
+<input type="hidden" name="{{.Prefix}}_name_{{.Index}}" value="{{.Name}}">
+<input type="hidden" name="{{.Prefix}}_url_{{.Index}}" value="{{.URL}}">
+<input type="hidden" name="{{.Prefix}}_upstream_url_{{.Index}}" value="{{.UpstreamURL}}">
+<input type="hidden" name="{{.Prefix}}_upstream_protocol_{{.Index}}" value="{{.UpstreamProtocol}}">
+<input type="hidden" name="{{.Prefix}}_upstream_proxy_protocol_{{.Index}}" value="{{.UpstreamProxyProtocol}}">
+{{if .UpstreamTLSVerify}}<input type="hidden" name="{{.Prefix}}_upstream_tls_verify_{{.Index}}" value="on">{{end}}
+<input type="hidden" name="{{.Prefix}}_upstream_tls_verify_cas_{{.Index}}" value="{{.UpstreamTLSVerifyCAs}}">
+<input type="hidden" name="{{.Prefix}}_bindings_{{.Index}}" value="{{.Bindings}}">
+<input type="hidden" name="{{.Prefix}}_metadata_{{.Index}}" value="{{.Metadata}}">
+<input type="hidden" name="{{.Prefix}}_description_{{.Index}}" value="{{.Description}}">
+<input type="hidden" name="{{.Prefix}}_traffic_policy_{{.Index}}" value="{{.TrafficPolicy}}">
+<input type="hidden" name="{{.Prefix}}_agent_tls_cert_{{.Index}}" value="{{.AgentTLSCert}}">
+<input type="hidden" name="{{.Prefix}}_agent_tls_key_{{.Index}}" value="{{.AgentTLSKey}}">
+<input type="hidden" name="{{.Prefix}}_agent_tls_mtls_cas_{{.Index}}" value="{{.AgentTLSMTLSCAs}}">
+{{if .PoolingEnabled}}<input type="hidden" name="{{.Prefix}}_pooling_enabled_{{.Index}}" value="on">{{end}}
+{{end}}
+
+{{define "form.html"}}
+<!doctype html>
+<html>
+<head>
+<title>Fleet Connector Setup</title>
+{{template "styles"}}
+</head>
+<body>
+<h1>Fleet Connector Setup</h1>
+{{if .Error}}<div class="error-banner">{{.Error}}</div>{{end}}
+
+<form method="POST" action="/submit?t={{.Token}}">
+  <input type="hidden" name="t" value="{{.Token}}">
+  <input type="hidden" name="saved_count" value="{{len .Saved}}">
+  <input type="hidden" name="draft_open" value="{{if .DraftOpen}}1{{else}}0{{end}}">
+
+  <div class="card">
+    <div class="card-title">Agent settings</div>
+    <label>Authtoken <span class="required">*</span>
+      <div class="password-field">
+        <input name="authtoken" type="password" required id="authtoken-input" value="{{.Session.AuthToken}}">
+        <button type="button" class="password-toggle" onclick="var i=document.getElementById('authtoken-input');var wasMasked=i.type==='password';i.type=wasMasked?'text':'password';document.getElementById('eye-open').style.display=wasMasked?'block':'none';document.getElementById('eye-closed').style.display=wasMasked?'none':'block';" title="Show/hide authtoken">
+          <svg id="eye-open" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg id="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+          </svg>
+        </button>
+      </div></label>
+    <label>Description
+      <input name="config_description" value="{{.Session.Description}}"></label>
+    <label>Metadata
+      <input name="config_metadata" value="{{.Session.Metadata}}"></label>
+    <label>Log level
+      <select name="config_log_level">
+        {{$level := .Session.LogLevel}}
+        <option value="" {{if eq $level ""}}selected{{end}}>info (default)</option>
+        <option value="debug" {{if eq $level "debug"}}selected{{end}}>debug</option>
+        <option value="warn" {{if eq $level "warn"}}selected{{end}}>warn</option>
+        <option value="error" {{if eq $level "error"}}selected{{end}}>error</option>
+      </select>
+    </label>
+  </div>
+
+  {{range .Saved}}
+  <div class="endpoint-box">
+    {{template "hidden_endpoint_fields" .}}
+    <span class="details"><strong>{{if .Name}}{{.Name}}{{else}}<span class="muted">(unnamed)</span>{{end}}</strong>
+      <span class="muted">— {{if .URL}}{{.URL}} → {{end}}{{.UpstreamURL}}</span></span>
+    <button type="submit" class="icon-btn" formaction="/edit-endpoint?t={{$.Token}}&index={{.Index}}" formnovalidate title="Edit this endpoint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+      </svg>
+    </button>
+    <button type="submit" class="icon-btn danger" formaction="/remove-endpoint?t={{$.Token}}&index={{.Index}}" formnovalidate title="Remove this endpoint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+        <path d="M10 11v6"/>
+        <path d="M14 11v6"/>
+        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+      </svg>
+    </button>
+  </div>
+  {{end}}
+
+  {{if .DraftOpen}}
+  <div class="card">
+    <div class="card-title">Endpoint settings</div>
+    <label>Name
+      <input name="name_new" value="{{.Draft.Name}}"></label>
+    <label>Upstream (local address, e.g. localhost:8080) <span class="required">*</span>
+      <input name="upstream_url_new" value="{{.Draft.UpstreamURL}}"></label>
+    <label>URL (leave blank for a random, ephemeral domain)
+      <input name="url_new" value="{{.Draft.URL}}"></label>
+
+    <details>
+      <summary>Advanced</summary>
+      <label>Description
+        <input name="description_new" value="{{.Draft.Description}}"></label>
+      <label>Metadata
+        <input name="metadata_new" value="{{.Draft.Metadata}}"></label>
+      <label>Bindings
+        {{$binding := .Draft.Bindings}}
+        <select name="bindings_new">
+          <option value="public" {{if or (eq $binding "") (eq $binding "public")}}selected{{end}}>public (default)</option>
+          <option value="internal" {{if eq $binding "internal"}}selected{{end}}>internal</option>
+          <option value="kubernetes" {{if eq $binding "kubernetes"}}selected{{end}}>kubernetes</option>
+        </select>
+      </label>
+      <label>Traffic policy (YAML)
+        <textarea name="traffic_policy_new" rows="3">{{.Draft.TrafficPolicy}}</textarea></label>
+      <label class="checkbox"><input type="checkbox" name="pooling_enabled_new" {{if .Draft.PoolingEnabled}}checked{{end}}> Pooling enabled</label>
+
+      <div class="subsection">Upstream</div>
+      <label>Protocol (http1 default, or http2)
+        <input name="upstream_protocol_new" value="{{.Draft.UpstreamProtocol}}"></label>
+      <label>Proxy protocol (1, 2, or blank)
+        <input name="upstream_proxy_protocol_new" value="{{.Draft.UpstreamProxyProtocol}}"></label>
+      <label class="checkbox"><input type="checkbox" name="upstream_tls_verify_new" {{if .Draft.UpstreamTLSVerify}}checked{{end}}> Verify upstream TLS certificate</label>
+      <label>Upstream TLS CA bundle path
+        <input name="upstream_tls_verify_cas_new" value="{{.Draft.UpstreamTLSVerifyCAs}}"></label>
+
+      <div class="subsection">Agent TLS termination <span style="text-transform:none; font-weight:400;">(fill cert and key together, or leave both blank)</span></div>
+      <label>Server certificate path
+        <input name="agent_tls_cert_new" value="{{.Draft.AgentTLSCert}}"></label>
+      <label>Server private key path
+        <input name="agent_tls_key_new" value="{{.Draft.AgentTLSKey}}"></label>
+      <label>Mutual TLS certificate authorities path
+        <input name="agent_tls_mtls_cas_new" value="{{.Draft.AgentTLSMTLSCAs}}"></label>
+    </details>
+
+    <button type="submit" class="btn-primary" formaction="/save-endpoint?t={{.Token}}" formnovalidate>Save</button>
+  </div>
+  {{else}}
+  <button type="submit" class="btn-dark" formaction="/new-endpoint?t={{.Token}}" formnovalidate title="Add another endpoint" style="margin-bottom:20px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <line x1="12" y1="5" x2="12" y2="19"/>
+      <line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+    New Endpoint
+  </button>
+  {{end}}
+
+  <div>
+    <button type="submit" class="btn-primary">Continue</button>
+  </div>
+</form>
+</body>
+</html>
+{{end}}

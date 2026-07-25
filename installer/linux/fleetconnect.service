@@ -1,0 +1,23 @@
+[Unit]
+Description=Fleet Connector
+Documentation=https://ngrok.com/docs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/fleetconnect
+Restart=on-failure
+RestartSec=5s
+
+# Fixed, well-known paths (§4.2, §11) — set explicitly rather than relying
+# solely on the binary's own defaults, so the unit file is self-documenting
+# about where it expects config/logs to live.
+Environment=FLEETCONNECT_CONFIG=/etc/fleetconnect/config.yaml
+Environment=FLEETCONNECT_LOG_PATH=/var/log/fleetconnect/fleetconnect.log
+
+# stdout/stderr go to journald automatically (§9) — no separate directive
+# needed. StandardOutput/StandardError default to "journal" under systemd.
+
+[Install]
+WantedBy=multi-user.target

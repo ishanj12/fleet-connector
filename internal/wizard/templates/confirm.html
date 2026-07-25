@@ -1,0 +1,72 @@
+{{define "confirm.html"}}
+<!doctype html>
+<html>
+<head>
+<title>Confirm setup</title>
+{{template "styles"}}
+</head>
+<body>
+<h1>Confirm setup</h1>
+
+{{if .Error}}<div class="error-banner">{{.Error}}</div>{{end}}
+
+<div class="card">
+  <div class="card-title">Agent settings</div>
+  <table>
+  <tr><td>Authtoken</td><td>{{.AuthTokenMasked}}</td></tr>
+  {{if .Session.Description}}<tr><td>Description</td><td>{{.Session.Description}}</td></tr>{{end}}
+  {{if .Session.Metadata}}<tr><td>Metadata</td><td>{{.Session.Metadata}}</td></tr>{{end}}
+  {{if .Session.LogLevel}}<tr><td>Log level</td><td>{{.Session.LogLevel}}</td></tr>{{end}}
+  </table>
+</div>
+
+<div class="card">
+  <div class="card-title">{{.Count}} endpoint{{if ne .Count 1}}s{{end}}</div>
+  <table>
+  <tr><th>Name</th><th>Upstream</th><th>URL</th></tr>
+  {{range .Endpoints}}
+  <tr><td>{{.Name}}</td><td>{{.UpstreamURL}}</td><td>{{.URL}}</td></tr>
+  {{end}}
+  </table>
+</div>
+
+<form method="POST" action="/confirm?t={{.Token}}">
+  <input type="hidden" name="t" value="{{.Token}}">
+  <input type="hidden" name="authtoken" value="{{.AuthToken}}">
+  <input type="hidden" name="config_description" value="{{.Session.Description}}">
+  <input type="hidden" name="config_metadata" value="{{.Session.Metadata}}">
+  <input type="hidden" name="config_log_level" value="{{.Session.LogLevel}}">
+  <input type="hidden" name="confirm_count" value="{{.Count}}">
+  {{range .Endpoints}}{{template "hidden_endpoint_fields" .}}{{end}}
+  <button type="submit" class="btn-primary">Confirm and connect</button>
+</form>
+
+<form method="GET" action="/" style="margin-top:12px;">
+  <input type="hidden" name="t" value="{{.Token}}">
+  <input type="hidden" name="authtoken" value="{{.AuthToken}}">
+  <input type="hidden" name="config_description" value="{{.Session.Description}}">
+  <input type="hidden" name="config_metadata" value="{{.Session.Metadata}}">
+  <input type="hidden" name="config_log_level" value="{{.Session.LogLevel}}">
+  <input type="hidden" name="saved_count" value="{{.Count}}">
+  {{range .Endpoints}}
+  <input type="hidden" name="saved_name_{{.Index}}" value="{{.Name}}">
+  <input type="hidden" name="saved_url_{{.Index}}" value="{{.URL}}">
+  <input type="hidden" name="saved_upstream_url_{{.Index}}" value="{{.UpstreamURL}}">
+  <input type="hidden" name="saved_upstream_protocol_{{.Index}}" value="{{.UpstreamProtocol}}">
+  <input type="hidden" name="saved_upstream_proxy_protocol_{{.Index}}" value="{{.UpstreamProxyProtocol}}">
+  {{if .UpstreamTLSVerify}}<input type="hidden" name="saved_upstream_tls_verify_{{.Index}}" value="on">{{end}}
+  <input type="hidden" name="saved_upstream_tls_verify_cas_{{.Index}}" value="{{.UpstreamTLSVerifyCAs}}">
+  <input type="hidden" name="saved_bindings_{{.Index}}" value="{{.Bindings}}">
+  <input type="hidden" name="saved_metadata_{{.Index}}" value="{{.Metadata}}">
+  <input type="hidden" name="saved_description_{{.Index}}" value="{{.Description}}">
+  <input type="hidden" name="saved_traffic_policy_{{.Index}}" value="{{.TrafficPolicy}}">
+  <input type="hidden" name="saved_agent_tls_cert_{{.Index}}" value="{{.AgentTLSCert}}">
+  <input type="hidden" name="saved_agent_tls_key_{{.Index}}" value="{{.AgentTLSKey}}">
+  <input type="hidden" name="saved_agent_tls_mtls_cas_{{.Index}}" value="{{.AgentTLSMTLSCAs}}">
+  {{if .PoolingEnabled}}<input type="hidden" name="saved_pooling_enabled_{{.Index}}" value="on">{{end}}
+  {{end}}
+  <button type="submit" class="btn-secondary">Back</button>
+</form>
+</body>
+</html>
+{{end}}

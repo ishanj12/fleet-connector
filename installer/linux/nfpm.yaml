@@ -1,0 +1,38 @@
+# nfpm package spec — builds .deb/.rpm from one config, cross-buildable
+# from any host without native dpkg-deb/rpmbuild toolchains (§11). Invoke
+# from the repo root (paths below are relative to the CWD nfpm runs from,
+# not to this file), after `go build -o fleetconnect ./cmd/fleetconnect`:
+#   nfpm package --config installer/linux/nfpm.yaml --packager deb --target dist/
+#   nfpm package --config installer/linux/nfpm.yaml --packager rpm --target dist/
+#
+# name/version/maintainer/homepage/license below are placeholders — an
+# adopting customer rebrands these (and the systemd unit's Description) as
+# their own product, same as the Windows MSI's ProductName (§1's Preface).
+name: fleetconnect
+arch: amd64
+platform: linux
+version: "0.1.0" # CI substitutes the real version at build time
+maintainer: "Your Company <support@example.com>"
+description: |
+  Fleet Connector — packages the ngrok agent as a platform-native,
+  installable service instead of a script.
+homepage: https://ngrok.com
+license: Proprietary
+
+contents:
+  - src: fleetconnect
+    dst: /usr/bin/fleetconnect
+    file_info:
+      mode: 0755
+  - src: installer/linux/fleetconnect.service
+    dst: /etc/systemd/system/fleetconnect.service
+
+# config.yaml is deliberately NOT listed here — it doesn't exist at
+# package-build time, it's rendered by postinstall.sh (or pre-staged by
+# gen-config before install). nfpm's config|noreplace conffile mechanism
+# only applies to files the package actually ships with a src:, so it
+# can't be used for a purely runtime-generated file — see preremove.sh.
+
+scripts:
+  postinstall: installer/linux/scripts/postinstall.sh
+  preremove: installer/linux/scripts/preremove.sh
