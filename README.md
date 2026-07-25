@@ -95,7 +95,7 @@ Three ways to produce or change `config.yaml`, at any point:
 | Tool | When to use it |
 |---|---|
 | **Setup wizard** (browser UI) | First-time, on-site, non-technical installer — no config exists yet |
-| **`fleetconnect gen-config [flags]`** | Ops pre-generates config centrally before deployment (see flags via `gen-config --help`... actually run with no args to see required flags, or read `cmd/fleetconnect/gen_config.go`) |
+| **`fleetconnect gen-config [flags]`** | Ops pre-generates config centrally before deployment — see [below](#gen-config-in-detail) |
 | **`fleetconnect edit-config [path]`** | Change a field on an already-deployed install — opens the real file in `$EDITOR`/`$VISUAL` (falls back to `notepad.exe` on Windows, `nano`/`vi` on Linux), validates before saving |
 
 **Important:** after any config change, the running service needs a real
@@ -103,6 +103,63 @@ restart to pick it up — `systemctl restart fleetconnect` on Linux, or
 restarting the Windows service. A dashboard-initiated restart from ngrok's
 UI does **not** re-read the file from disk; it only recycles the existing
 connection.
+
+### `gen-config` in detail
+
+`--description` is the only always-required flag — it's both a human-readable
+label for this install (shown in the ngrok dashboard) and, if minting a fresh
+credential (see below), the label attached to that credential too.
+
+**One endpoint** — use the shorthand flags:
+
+```sh
+./fleetconnect gen-config \
+  --description "store-042" \
+  --upstream localhost:8080 \
+  --url https://store-042.example.com \
+  --authtoken "<your authtoken>"
+```
+
+`--upstream` is required whenever you use the shorthand; `--url` is optional
+(blank means ngrok assigns a random HTTPS URL) and `--name` is an optional
+label for the endpoint itself (not the whole install).
+
+**More than one endpoint** — repeat `--endpoint` instead, once per tunnel,
+as a comma-separated `key=value` list. This is mutually exclusive with the
+`--name`/`--upstream`/`--url` shorthand above:
+
+```sh
+./fleetconnect gen-config \
+  --description "store-042" \
+  --authtoken "<your authtoken>" \
+  --endpoint "name=pos-1,upstream.url=localhost:8080,url=https://pos-1.example.com" \
+  --endpoint "name=pos-2,upstream.url=localhost:8081"
+```
+
+Each `--endpoint` value only supports three keys — `name`, `upstream.url`
+(required), and `url` (optional). Anything beyond that (bindings, traffic
+policy, agent TLS termination) means hand-editing the generated file
+afterward, or using the wizard instead, which exposes the full schema.
+
+**Other useful flags:**
+
+| Flag | Purpose |
+|---|---|
+| `--path` | Where to write the file (defaults to `config.yaml` in the current directory — use the platform's fixed path, e.g. `/etc/fleetconnect/config.yaml`, when pre-staging for an install) |
+| `--metadata` | Opaque session metadata (distinct from `--description`) |
+| `--log-level` | `debug`, `info` (default), `warn`, or `error` |
+| `--authtoken` | An existing authtoken: a literal value, `env:VARNAME`, or `file:PATH` (reads a pre-staged credentials file — nothing but the *path* needs to touch a command line or CI variable this way) |
+
+Omitting `--authtoken` entirely mints a brand-new, uniquely revocable
+credential via ngrok's Credentials API instead — set `FLEETCONNECT_NGROK_API_KEY`
+(or `FLEETCONNECT_NGROK_API_KEY_FILE`) to your ngrok **API key** (not an
+agent authtoken — this is the account-scoped dashboard key) for this to
+work:
+
+```sh
+export FLEETCONNECT_NGROK_API_KEY="<your ngrok API key>"
+./fleetconnect gen-config --description "store-042" --upstream localhost:8080
+```
 
 ## Installing on Windows
 
