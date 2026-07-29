@@ -61,6 +61,20 @@
         <option value="error" {{if eq $level "error"}}selected{{end}}>error</option>
       </select>
     </label>
+
+    <details>
+      <summary>Advanced connection settings</summary>
+      <label>Connect URL <span class="muted">(custom/dedicated ngrok connect endpoint — leave blank for ngrok's public one)</span>
+        <input name="config_connect_url" value="{{.Session.ConnectURL}}"></label>
+      <label>Connect CA cert file <span class="muted">(PEM bundle to trust for the connect URL above, if it needs one)</span>
+        <input name="config_connect_ca_cert_file" value="{{.Session.ConnectCACertFile}}"></label>
+      <label>Proxy URL <span class="muted">(outbound HTTP/SOCKS proxy to route through)</span>
+        <input name="config_proxy_url" value="{{.Session.ProxyURL}}"></label>
+      <label>Heartbeat interval <span class="muted">(e.g. 30s)</span>
+        <input name="config_heartbeat_interval" value="{{.Session.HeartbeatInterval}}"></label>
+      <label>Heartbeat tolerance <span class="muted">(e.g. 1m)</span>
+        <input name="config_heartbeat_tolerance" value="{{.Session.HeartbeatTolerance}}"></label>
+    </details>
   </div>
 
   {{range .Saved}}

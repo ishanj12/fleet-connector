@@ -149,6 +149,14 @@ afterward, or using the wizard instead, which exposes the full schema.
 | `--metadata` | Opaque session metadata (distinct from `--description`) |
 | `--log-level` | `debug`, `info` (default), `warn`, or `error` |
 | `--authtoken` | An existing authtoken: a literal value, `env:VARNAME`, or `file:PATH` (reads a pre-staged credentials file — nothing but the *path* needs to touch a command line or CI variable this way) |
+| `--connect-url` | Custom/dedicated/self-hosted ngrok connect endpoint (blank uses ngrok's public one) |
+| `--connect-ca-cert-file` | PEM CA bundle to trust for `--connect-url`, if it needs one |
+| `--proxy-url` | Outbound HTTP/SOCKS proxy to route the agent's own connection through — relevant for corporate networks that force traffic through one |
+| `--heartbeat-interval` | Connection heartbeat cadence, e.g. `30s` |
+| `--heartbeat-tolerance` | How long a missed heartbeat is tolerated before the connection is considered disconnected, e.g. `1m` — useful for flaky/high-latency links |
+
+These same five settings are also available in the setup wizard, under
+"Advanced connection settings."
 
 Omitting `--authtoken` entirely mints a brand-new, uniquely revocable
 credential via ngrok's Credentials API instead — set `FLEETCONNECT_NGROK_API_KEY`

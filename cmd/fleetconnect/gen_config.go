@@ -28,6 +28,11 @@ func runGenConfig(args []string) error {
 	metadata := fs.String("metadata", "", "agent/session-level metadata")
 	logLevel := fs.String("log-level", "", "log_level for the installed config: debug, info (default), warn, or error")
 	authtokenFlag := fs.String("authtoken", "", `an already-existing authtoken to use directly, one of: a literal value; "env:VARNAME" to read it from that environment variable; "file:PATH" to read it from a pre-staged, ACL'd file (§10's FLEETCONNECT_CREDFILE pattern — usable directly from a WiX deferred custom action's command line, since only the path crosses that boundary, never the secret); or omit entirely to mint a fresh per-install credential via the Credentials API (recommended default, requires FLEETCONNECT_NGROK_API_KEY[_FILE])`)
+	connectURL := fs.String("connect-url", "", "custom/dedicated/self-hosted ngrok connect endpoint (blank uses ngrok's public one)")
+	connectCACertFile := fs.String("connect-ca-cert-file", "", "PEM CA bundle to trust for --connect-url, if it needs one")
+	proxyURL := fs.String("proxy-url", "", "outbound HTTP/SOCKS proxy URL to route the agent's own connection through")
+	heartbeatInterval := fs.String("heartbeat-interval", "", "connection heartbeat interval, e.g. 30s (blank uses the SDK's default)")
+	heartbeatTolerance := fs.String("heartbeat-tolerance", "", "how long a missed heartbeat is tolerated before the connection is considered disconnected, e.g. 1m")
 
 	// Single-endpoint convenience flags — the common case.
 	upstream := fs.String("upstream", "", "single-endpoint shorthand: upstream address, e.g. localhost:8080 (mutually exclusive with --endpoint)")
@@ -61,7 +66,19 @@ func runGenConfig(args []string) error {
 		return err
 	}
 
-	return writeConfig(*path, *description, *metadata, *logLevel, endpoints, authtoken)
+	return writeConfig(genConfigOptions{
+		path:               *path,
+		description:        *description,
+		metadata:           *metadata,
+		logLevel:           *logLevel,
+		endpoints:          endpoints,
+		authtoken:          authtoken,
+		connectURL:         *connectURL,
+		connectCACertFile:  *connectCACertFile,
+		proxyURL:           *proxyURL,
+		heartbeatInterval:  *heartbeatInterval,
+		heartbeatTolerance: *heartbeatTolerance,
+	})
 }
 
 // resolveEndpoints builds the endpoint list from whichever flag style was
@@ -176,20 +193,40 @@ func resolveAPIKey() (string, error) {
 	return "", errors.New("one of FLEETCONNECT_NGROK_API_KEY or FLEETCONNECT_NGROK_API_KEY_FILE must be set")
 }
 
-func writeConfig(path, description, metadata, logLevel string, endpoints []config.Endpoint, authtoken string) error {
+// genConfigOptions is a plain struct rather than more positional string
+// params — writeConfig's parameter list was already at the point where
+// adding the connection-level fields below as more bare strings would
+// make call sites error-prone to read and easy to mis-order.
+type genConfigOptions struct {
+	path                                  string
+	description, metadata, logLevel       string
+	endpoints                             []config.Endpoint
+	authtoken                             string
+	connectURL, connectCACertFile         string
+	proxyURL                              string
+	heartbeatInterval, heartbeatTolerance string
+}
+
+func writeConfig(opts genConfigOptions) error {
+	path := opts.path
 	if path == "" {
 		path = "config.yaml"
 	}
 	cfg := config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
-		Description:   description,
-		Metadata:      metadata,
-		LogLevel:      logLevel,
+		Description:   opts.description,
+		Metadata:      opts.metadata,
+		LogLevel:      opts.logLevel,
 		Credential: config.CredentialRef{
 			Provider: "static",
-			Params:   map[string]string{"authtoken": authtoken},
+			Params:   map[string]string{"authtoken": opts.authtoken},
 		},
-		Endpoints: endpoints,
+		Endpoints:          opts.endpoints,
+		ConnectURL:         opts.connectURL,
+		ConnectCACertFile:  opts.connectCACertFile,
+		ProxyURL:           opts.proxyURL,
+		HeartbeatInterval:  opts.heartbeatInterval,
+		HeartbeatTolerance: opts.heartbeatTolerance,
 	}
 	if err := config.Validate(cfg); err != nil {
 		return fmt.Errorf("generated config failed validation: %w", err)

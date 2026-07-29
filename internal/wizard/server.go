@@ -279,18 +279,28 @@ func reindex(fields []endpointFields) {
 // confirmed live, not hypothetical (typing an authtoken then clicking
 // "new endpoint" silently wiped it before this field existed).
 type sessionFields struct {
-	Description string
-	Metadata    string
-	LogLevel    string
-	AuthToken   string
+	Description        string
+	Metadata           string
+	LogLevel           string
+	AuthToken          string
+	ConnectURL         string
+	ConnectCACertFile  string
+	ProxyURL           string
+	HeartbeatInterval  string
+	HeartbeatTolerance string
 }
 
 func readSessionFields(r *http.Request) sessionFields {
 	return sessionFields{
-		Description: r.FormValue("config_description"),
-		Metadata:    r.FormValue("config_metadata"),
-		LogLevel:    r.FormValue("config_log_level"),
-		AuthToken:   r.FormValue("authtoken"),
+		Description:        r.FormValue("config_description"),
+		Metadata:           r.FormValue("config_metadata"),
+		LogLevel:           r.FormValue("config_log_level"),
+		AuthToken:          r.FormValue("authtoken"),
+		ConnectURL:         r.FormValue("config_connect_url"),
+		ConnectCACertFile:  r.FormValue("config_connect_ca_cert_file"),
+		ProxyURL:           r.FormValue("config_proxy_url"),
+		HeartbeatInterval:  r.FormValue("config_heartbeat_interval"),
+		HeartbeatTolerance: r.FormValue("config_heartbeat_tolerance"),
 	}
 }
 
@@ -438,12 +448,17 @@ func (w *wizardState) handleSubmit(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := config.Config{
-		SchemaVersion: config.CurrentSchemaVersion,
-		Description:   session.Description,
-		Metadata:      session.Metadata,
-		LogLevel:      session.LogLevel,
-		Credential:    config.CredentialRef{Provider: "static", Params: map[string]string{"authtoken": session.AuthToken}},
-		Endpoints:     endpoints,
+		SchemaVersion:      config.CurrentSchemaVersion,
+		Description:        session.Description,
+		Metadata:           session.Metadata,
+		LogLevel:           session.LogLevel,
+		ConnectURL:         session.ConnectURL,
+		ConnectCACertFile:  session.ConnectCACertFile,
+		ProxyURL:           session.ProxyURL,
+		HeartbeatInterval:  session.HeartbeatInterval,
+		HeartbeatTolerance: session.HeartbeatTolerance,
+		Credential:         config.CredentialRef{Provider: "static", Params: map[string]string{"authtoken": session.AuthToken}},
+		Endpoints:          endpoints,
 	}
 	if err := config.Validate(cfg); err != nil {
 		saved := parseSavedEndpoints(r)
@@ -480,20 +495,24 @@ func (w *wizardState) handleConfirm(rw http.ResponseWriter, r *http.Request) {
 		endpoints[i] = f.toConfigEndpoint()
 	}
 
-	authtoken := r.FormValue("authtoken")
+	session := readSessionFields(r)
 	cfg := config.Config{
-		SchemaVersion: config.CurrentSchemaVersion,
-		Description:   r.FormValue("config_description"),
-		Metadata:      r.FormValue("config_metadata"),
-		LogLevel:      r.FormValue("config_log_level"),
-		Credential:    config.CredentialRef{Provider: "static", Params: map[string]string{"authtoken": authtoken}},
-		Endpoints:     endpoints,
+		SchemaVersion:      config.CurrentSchemaVersion,
+		Description:        session.Description,
+		Metadata:           session.Metadata,
+		LogLevel:           session.LogLevel,
+		ConnectURL:         session.ConnectURL,
+		ConnectCACertFile:  session.ConnectCACertFile,
+		ProxyURL:           session.ProxyURL,
+		HeartbeatInterval:  session.HeartbeatInterval,
+		HeartbeatTolerance: session.HeartbeatTolerance,
+		Credential:         config.CredentialRef{Provider: "static", Params: map[string]string{"authtoken": session.AuthToken}},
+		Endpoints:          endpoints,
 	}
 	renderErr := func(msg string) {
-		session := sessionFields{Description: cfg.Description, Metadata: cfg.Metadata, LogLevel: cfg.LogLevel, AuthToken: authtoken}
 		w.render(rw, "confirm.html", map[string]any{
 			"Token": w.token, "Endpoints": wrapEndpoints("confirm", fields), "Count": len(fields),
-			"Session": session, "AuthToken": authtoken, "AuthTokenMasked": maskToken(authtoken),
+			"Session": session, "AuthToken": session.AuthToken, "AuthTokenMasked": maskToken(session.AuthToken),
 			"Error": msg,
 		})
 	}

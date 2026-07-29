@@ -17,6 +17,11 @@
   {{if .Session.Description}}<tr><td>Description</td><td>{{.Session.Description}}</td></tr>{{end}}
   {{if .Session.Metadata}}<tr><td>Metadata</td><td>{{.Session.Metadata}}</td></tr>{{end}}
   {{if .Session.LogLevel}}<tr><td>Log level</td><td>{{.Session.LogLevel}}</td></tr>{{end}}
+  {{if .Session.ConnectURL}}<tr><td>Connect URL</td><td>{{.Session.ConnectURL}}</td></tr>{{end}}
+  {{if .Session.ConnectCACertFile}}<tr><td>Connect CA cert file</td><td>{{.Session.ConnectCACertFile}}</td></tr>{{end}}
+  {{if .Session.ProxyURL}}<tr><td>Proxy URL</td><td>{{.Session.ProxyURL}}</td></tr>{{end}}
+  {{if .Session.HeartbeatInterval}}<tr><td>Heartbeat interval</td><td>{{.Session.HeartbeatInterval}}</td></tr>{{end}}
+  {{if .Session.HeartbeatTolerance}}<tr><td>Heartbeat tolerance</td><td>{{.Session.HeartbeatTolerance}}</td></tr>{{end}}
   </table>
 </div>
 
@@ -36,6 +41,11 @@
   <input type="hidden" name="config_description" value="{{.Session.Description}}">
   <input type="hidden" name="config_metadata" value="{{.Session.Metadata}}">
   <input type="hidden" name="config_log_level" value="{{.Session.LogLevel}}">
+  <input type="hidden" name="config_connect_url" value="{{.Session.ConnectURL}}">
+  <input type="hidden" name="config_connect_ca_cert_file" value="{{.Session.ConnectCACertFile}}">
+  <input type="hidden" name="config_proxy_url" value="{{.Session.ProxyURL}}">
+  <input type="hidden" name="config_heartbeat_interval" value="{{.Session.HeartbeatInterval}}">
+  <input type="hidden" name="config_heartbeat_tolerance" value="{{.Session.HeartbeatTolerance}}">
   <input type="hidden" name="confirm_count" value="{{.Count}}">
   {{range .Endpoints}}{{template "hidden_endpoint_fields" .}}{{end}}
   <button type="submit" class="btn-primary">Confirm and connect</button>
@@ -47,6 +57,11 @@
   <input type="hidden" name="config_description" value="{{.Session.Description}}">
   <input type="hidden" name="config_metadata" value="{{.Session.Metadata}}">
   <input type="hidden" name="config_log_level" value="{{.Session.LogLevel}}">
+  <input type="hidden" name="config_connect_url" value="{{.Session.ConnectURL}}">
+  <input type="hidden" name="config_connect_ca_cert_file" value="{{.Session.ConnectCACertFile}}">
+  <input type="hidden" name="config_proxy_url" value="{{.Session.ProxyURL}}">
+  <input type="hidden" name="config_heartbeat_interval" value="{{.Session.HeartbeatInterval}}">
+  <input type="hidden" name="config_heartbeat_tolerance" value="{{.Session.HeartbeatTolerance}}">
   <input type="hidden" name="saved_count" value="{{.Count}}">
   {{range .Endpoints}}
   <input type="hidden" name="saved_name_{{.Index}}" value="{{.Name}}">

@@ -2,10 +2,17 @@ package wizard
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,6 +26,41 @@ import (
 
 	"fleet-connector/internal/credentials"
 )
+
+// writeTempPEMCert generates a real, minimal self-signed cert and writes
+// it as a PEM file in t.TempDir() — config.Validate's ConnectCACertFile
+// check parses real x509 PEM data, so a fixture path needs to hold one,
+// not a stub string, the same technique already used in
+// internal/config/validate_test.go and internal/tunnel/mapping_test.go.
+func writeTempPEMCert(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "fleet-connector-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		IsCA:         true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create pem file: %v", err)
+	}
+	defer f.Close()
+	if err := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+		t.Fatalf("encode pem: %v", err)
+	}
+	return path
+}
 
 // fakeAgent/fakeForwarder let handleConfirm's TestConnect probe (see
 // server.go) succeed without a real network call — these tests are about
@@ -499,6 +541,102 @@ func TestServeAdvancedFields(t *testing.T) {
 		"description: POS terminal", "metadata: site=042",
 		"pooling_enabled: true", "protocol: http2", "proxy_protocol: \"1\"",
 		"- internal",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("config.yaml missing %q, got:\n%s", want, got)
+		}
+	}
+}
+
+// TestServeConnectionSettings covers the five Config-level fields
+// (ConnectURL, ConnectCACertFile, ProxyURL, HeartbeatInterval,
+// HeartbeatTolerance) added to the wizard's "Advanced connection
+// settings" section — previously settable only by hand-editing
+// config.yaml directly or via gen-config's matching flags, not through
+// the wizard at all. Verifies both that submit->confirm preserves them
+// (the same round-trip bug class the authtoken fix above guards against)
+// and that they land correctly in the final written config.yaml.
+func TestServeConnectionSettings(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	var logBuf strings.Builder
+	log := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- Serve(ctx, configPath, credentials.StaticProvider{}, fakeFactory, log) }()
+
+	wizardURL := waitForURL(t, &logBuf)
+	base, tok := splitURL(t, wizardURL)
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	caCertPath := writeTempPEMCert(t)
+
+	connectionFields := url.Values{
+		"t": {tok}, "saved_count": {"0"}, "draft_open": {"1"},
+		"name_new": {"pos-1"}, "upstream_url_new": {"localhost:8080"},
+		"authtoken":                   {"fake_token_conn_settings"},
+		"config_connect_url":          {"https://connect.example.com:443"},
+		"config_connect_ca_cert_file": {caCertPath},
+		"config_proxy_url":            {"http://proxy.example.com:8080"},
+		"config_heartbeat_interval":   {"30s"},
+		"config_heartbeat_tolerance":  {"1m"},
+	}
+
+	resp, err := client.PostForm(base+"/submit?t="+tok, connectionFields)
+	if err != nil {
+		t.Fatalf("POST submit: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST submit: status %d, body: %s", resp.StatusCode, body)
+	}
+	for _, want := range []string{
+		`value="https://connect.example.com:443"`,
+		`value="` + caCertPath + `"`,
+		`value="http://proxy.example.com:8080"`,
+		`value="30s"`,
+		`value="1m"`,
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("confirm.html missing round-tripped %q, got:\n%s", want, body)
+		}
+	}
+
+	resp, err = client.PostForm(base+"/confirm?t="+tok, url.Values{
+		"t": {tok}, "confirm_count": {"1"},
+		"confirm_name_0": {"pos-1"}, "confirm_upstream_url_0": {"localhost:8080"},
+		"authtoken":                   {"fake_token_conn_settings"},
+		"config_connect_url":          {"https://connect.example.com:443"},
+		"config_connect_ca_cert_file": {caCertPath},
+		"config_proxy_url":            {"http://proxy.example.com:8080"},
+		"config_heartbeat_interval":   {"30s"},
+		"config_heartbeat_tolerance":  {"1m"},
+	})
+	if err != nil {
+		t.Fatalf("POST confirm: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST confirm: status %d", resp.StatusCode)
+	}
+	if err := <-serveErr; err != nil {
+		t.Fatalf("Serve returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("config.yaml was not written: %v", err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"connect_url: https://connect.example.com:443",
+		"connect_ca_cert_file: " + caCertPath,
+		"proxy_url: http://proxy.example.com:8080",
+		"heartbeat_interval: 30s",
+		"heartbeat_tolerance: 1m",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("config.yaml missing %q, got:\n%s", want, got)
