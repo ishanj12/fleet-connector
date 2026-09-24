@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -20,6 +21,9 @@ type recorder struct {
 
 	launchCalls []string
 	launchErr   error
+
+	diagnoseCalls  []string
+	diagnoseResult string
 }
 
 func (r *recorder) verify(path string) error {
@@ -36,6 +40,13 @@ func (r *recorder) launch(path string) error {
 	return r.launchErr
 }
 
+func (r *recorder) diagnose(path string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.diagnoseCalls = append(r.diagnoseCalls, path)
+	return r.diagnoseResult
+}
+
 func TestApplyDownloadsVerifiesAndLaunches(t *testing.T) {
 	const body = "fake installer bytes"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +55,7 @@ func TestApplyDownloadsVerifiesAndLaunches(t *testing.T) {
 	defer srv.Close()
 
 	rec := &recorder{}
-	a := New(nil, rec.verify, rec.launch)
+	a := New(nil, rec.verify, rec.launch, rec.diagnose)
 
 	if err := a.Apply(context.Background(), srv.URL); err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -73,7 +84,7 @@ func TestApplyRefusesToLaunchOnVerifyFailure(t *testing.T) {
 	defer srv.Close()
 
 	rec := &recorder{verifyErr: errors.New("signature status \"NotSigned\", expected \"Valid\"")}
-	a := New(nil, rec.verify, rec.launch)
+	a := New(nil, rec.verify, rec.launch, rec.diagnose)
 
 	err := a.Apply(context.Background(), srv.URL)
 	if err == nil {
@@ -91,7 +102,7 @@ func TestApplyFailsOnNon200Status(t *testing.T) {
 	defer srv.Close()
 
 	rec := &recorder{}
-	a := New(nil, rec.verify, rec.launch)
+	a := New(nil, rec.verify, rec.launch, rec.diagnose)
 
 	err := a.Apply(context.Background(), srv.URL)
 	if err == nil {
@@ -104,7 +115,7 @@ func TestApplyFailsOnNon200Status(t *testing.T) {
 
 func TestApplyFailsOnUnreachableURL(t *testing.T) {
 	rec := &recorder{}
-	a := New(nil, rec.verify, rec.launch)
+	a := New(nil, rec.verify, rec.launch, rec.diagnose)
 
 	// Port 0 on localhost is never a live listener.
 	err := a.Apply(context.Background(), "http://127.0.0.1:0/installer.msi")
@@ -120,13 +131,58 @@ func TestApplyPropagatesLaunchFailure(t *testing.T) {
 	defer srv.Close()
 
 	rec := &recorder{launchErr: errors.New("starting msiexec: access is denied")}
-	a := New(nil, rec.verify, rec.launch)
+	a := New(nil, rec.verify, rec.launch, rec.diagnose)
 
 	if err := a.Apply(context.Background(), srv.URL); err == nil {
 		t.Fatal("expected Apply to surface a launch failure")
 	}
 	if len(rec.verifyCalls) != 1 {
 		t.Errorf("verify should still have been called once before the launch failure, got %d calls", len(rec.verifyCalls))
+	}
+}
+
+func TestApplyEnrichesLaunchFailureWithDiagnosis(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("fake installer bytes"))
+	}))
+	defer srv.Close()
+
+	rec := &recorder{
+		launchErr:      errors.New("starting msiexec: access is denied"),
+		diagnoseResult: "Trojan:Win32/Wacatac.B!ml",
+	}
+	a := New(nil, rec.verify, rec.launch, rec.diagnose)
+
+	err := a.Apply(context.Background(), srv.URL)
+	if err == nil {
+		t.Fatal("expected Apply to surface a launch failure")
+	}
+	if !strings.Contains(err.Error(), "Trojan:Win32/Wacatac.B!ml") {
+		t.Errorf("expected error to include the diagnosed threat name, got: %v", err)
+	}
+	if len(rec.diagnoseCalls) != 1 {
+		t.Errorf("expected diagnose to be called once, got %d calls", len(rec.diagnoseCalls))
+	}
+}
+
+func TestApplyFallsBackToGenericHintWhenDiagnosisEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("fake installer bytes"))
+	}))
+	defer srv.Close()
+
+	rec := &recorder{launchErr: errors.New("starting msiexec: access is denied")}
+	a := New(nil, rec.verify, rec.launch, rec.diagnose)
+
+	err := a.Apply(context.Background(), srv.URL)
+	if err == nil {
+		t.Fatal("expected Apply to surface a launch failure")
+	}
+	if !strings.Contains(err.Error(), avHint) {
+		t.Errorf("expected error to fall back to the generic AV hint, got: %v", err)
+	}
+	if len(rec.diagnoseCalls) != 1 {
+		t.Errorf("expected diagnose to be called once, got %d calls", len(rec.diagnoseCalls))
 	}
 }
 

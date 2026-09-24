@@ -54,7 +54,7 @@ func NewManager(cfg config.Config, creds credentials.Provider, factory AgentFact
 	return &Manager{
 		cfg: cfg, creds: creds, factory: factory, log: log,
 		connectCAs: connectCAs, heartbeatInterval: heartbeatInterval, heartbeatTolerance: heartbeatTolerance,
-		updater:       update.New(log, update.DefaultVerify(cfg.UpdateSignerThumbprint), update.DefaultLaunch),
+		updater:       update.New(log, update.DefaultVerify(cfg.UpdateSignerThumbprint), update.DefaultLaunch, update.DefaultDiagnose),
 		restart:       make(chan struct{}, 1),
 		stopRequested: make(chan struct{}),
 	}, nil

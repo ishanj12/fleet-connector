@@ -314,7 +314,7 @@ func TestManagerRPCUpdateIgnoredWhenNotConfigured(t *testing.T) {
 	}
 
 	rec := &updateRecorder{}
-	m.updater = update.New(nil, rec.verify, rec.launch)
+	m.updater = update.New(nil, rec.verify, rec.launch, rec.diagnose)
 
 	if _, err := m.handleRPC(context.Background(), nil, fakeRPCRequest{method: rpc.UpdateAgentMethod}); err != nil {
 		t.Fatalf("handleRPC: %v", err)
@@ -338,7 +338,7 @@ func TestManagerRPCUpdateIgnoredOnNonWindows(t *testing.T) {
 	}
 
 	rec := &updateRecorder{}
-	m.updater = update.New(nil, rec.verify, rec.launch)
+	m.updater = update.New(nil, rec.verify, rec.launch, rec.diagnose)
 
 	if _, err := m.handleRPC(context.Background(), nil, fakeRPCRequest{method: rpc.UpdateAgentMethod}); err != nil {
 		t.Fatalf("handleRPC: %v", err)
@@ -366,7 +366,7 @@ func TestManagerRPCUpdateAppliesOnWindows(t *testing.T) {
 	}
 
 	rec := &updateRecorder{}
-	m.updater = update.New(nil, rec.verify, rec.launch)
+	m.updater = update.New(nil, rec.verify, rec.launch, rec.diagnose)
 
 	if _, err := m.handleRPC(context.Background(), nil, fakeRPCRequest{method: rpc.UpdateAgentMethod}); err != nil {
 		t.Fatalf("handleRPC: %v", err)
@@ -406,6 +406,10 @@ func (r *updateRecorder) launch(path string) error {
 	defer r.mu.Unlock()
 	r.launchCallsN++
 	return nil
+}
+
+func (r *updateRecorder) diagnose(path string) string {
+	return ""
 }
 
 func (r *updateRecorder) callCount() int {

@@ -41,11 +41,37 @@ type VerifyFunc func(path string) error
 // must survive that rather than being torn down along with it.
 type LaunchFunc func(path string) error
 
+// DiagnoseFunc is a best-effort check for why launching the verified
+// installer might have failed — not a correctness gate like VerifyFunc,
+// just extra context attached to the error Apply already returns. Returns
+// "" (never itself treated as an error) when nothing extra is known: wrong
+// AV product in use, the query failed, or nothing matched. A download or
+// launch failure commonly manifests as a generic OS-level error (access
+// denied, file not found) whether the real cause is AV/EDR quarantining or
+// blocking the file, or something unrelated — this is what turns "some
+// generic error" into "Windows Defender specifically blocked this," when
+// that's actually what happened.
+type DiagnoseFunc func(path string) string
+
+// avHint is appended to download failures, where the downloaded file is
+// already deleted by the time Apply sees the error (see download's own
+// cleanup) — there's nothing left to inspect, so this stays a generic,
+// AV-product-agnostic pointer rather than the more specific
+// DiagnoseFunc-based check Apply runs for a launch failure, where the
+// verified file is still present on disk.
+const avHint = "if this looks like a permissions or missing-file error, antivirus/EDR software may have quarantined or blocked the file before the agent could act on it — see the README's remote-update section on certificate allowlisting"
+
 // DefaultLaunch is the real, platform-specific implementation (see
 // launch_windows.go). New takes it as an explicit parameter rather than
 // hardcoding it, the same test-seam pattern as tunnel.AgentFactory — real
 // callers pass this, tests pass a fake.
 var DefaultLaunch LaunchFunc = launchInstaller
+
+// DefaultDiagnose is the real, Windows-specific implementation (see
+// diagnose_windows.go): asks Windows Defender directly whether it recently
+// detected/quarantined something at path. Same test-seam pattern as
+// DefaultLaunch.
+var DefaultDiagnose DiagnoseFunc = checkWindowsDefenderDetection
 
 // DefaultVerify returns the real, platform-specific verify function (see
 // verify_windows.go), pinned to expectedThumbprint — the certificate
@@ -98,13 +124,15 @@ type Applier struct {
 	httpClient *http.Client
 	verify     VerifyFunc
 	launch     LaunchFunc
+	diagnose   DiagnoseFunc
 }
 
-// New builds an Applier. verify/launch are almost always DefaultVerify/
-// DefaultLaunch in production; tests substitute fakes to exercise Apply's
-// download/verify/launch sequencing without needing a real signed installer
-// or a Windows machine.
-func New(log *slog.Logger, verify VerifyFunc, launch LaunchFunc) *Applier {
+// New builds an Applier. verify/launch/diagnose are almost always
+// DefaultVerify/DefaultLaunch/DefaultDiagnose in production; tests
+// substitute fakes to exercise Apply's sequencing (including which
+// diagnostic message ends up attached to which failure) without needing a
+// real signed installer or a Windows machine.
+func New(log *slog.Logger, verify VerifyFunc, launch LaunchFunc, diagnose DiagnoseFunc) *Applier {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
@@ -113,6 +141,7 @@ func New(log *slog.Logger, verify VerifyFunc, launch LaunchFunc) *Applier {
 		httpClient: &http.Client{Timeout: downloadTimeout},
 		verify:     verify,
 		launch:     launch,
+		diagnose:   diagnose,
 	}
 }
 
@@ -122,7 +151,10 @@ func New(log *slog.Logger, verify VerifyFunc, launch LaunchFunc) *Applier {
 func (a *Applier) Apply(ctx context.Context, sourceURL string) error {
 	path, err := a.download(ctx, sourceURL)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", sourceURL, err)
+		// download already deleted any partial file on failure (see its own
+		// cleanup) — nothing left to diagnose, so this stays a generic,
+		// AV-product-agnostic hint rather than a DiagnoseFunc call.
+		return fmt.Errorf("download %s: %w (%s)", sourceURL, err, avHint)
 	}
 	defer os.Remove(path)
 
@@ -132,7 +164,10 @@ func (a *Applier) Apply(ctx context.Context, sourceURL string) error {
 	a.log.Info("update signature verified, launching installer")
 
 	if err := a.launch(path); err != nil {
-		return fmt.Errorf("launch installer: %w", err)
+		if detail := a.diagnose(path); detail != "" {
+			return fmt.Errorf("launch installer: %w (Windows Defender detected %q on this file — get your signing certificate allowlisted, see the README's remote-update section)", err, detail)
+		}
+		return fmt.Errorf("launch installer: %w (%s)", err, avHint)
 	}
 	return nil
 }
