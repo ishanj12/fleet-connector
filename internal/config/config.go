@@ -76,4 +76,32 @@ type Config struct {
 	HeartbeatInterval  string        `yaml:"heartbeat_interval,omitempty"`
 	HeartbeatTolerance string        `yaml:"heartbeat_tolerance,omitempty"`
 	LogLevel           string        `yaml:"log_level,omitempty"` // "debug", "info" (default), "warn", or "error" — governs both this app's own logs and whatever the SDK emits via ngrok.WithLogger
+
+	// UpdateSourceURL, if set, is where the RPC-triggered self-update flow
+	// (see internal/update) downloads a new installer from when ngrok's
+	// dashboard/API sends this agent an UpdateAgentMethod command. Empty
+	// (the default) disables the feature entirely — UpdateAgentMethod is
+	// logged and otherwise ignored, never silently attempted. This
+	// reference implementation has no distribution point of its own; an
+	// adopting customer wires this to wherever they host their own signed
+	// build. The download target may end up being a plain, unauthenticated
+	// URL in practice (an unattended process can't complete an interactive
+	// SSO/MFA login the way a human fetching the same file could) — the
+	// signature check in internal/update.Apply, not who can reach this URL,
+	// is what actually has to be trusted. Windows-only today — see
+	// internal/update's platform files.
+	UpdateSourceURL string `yaml:"update_source_url,omitempty"`
+
+	// UpdateSignerThumbprint is the SHA-1 (or SHA-256) thumbprint of the
+	// code-signing certificate that must have signed whatever
+	// UpdateSourceURL serves, as reported by PowerShell's
+	// Get-AuthenticodeSignature: `(Get-AuthenticodeSignature path).
+	// SignerCertificate.Thumbprint`. Required whenever UpdateSourceURL is
+	// set (see Validate) — checking only that *some* certificate signed
+	// the download isn't a meaningful safety gate on its own, since anyone
+	// with their own legitimately-issued signing certificate would also
+	// pass that check. Pinning to this specific thumbprint is what
+	// actually makes UpdateSourceURL safe to point at a plain,
+	// unauthenticated URL (see that field's own doc comment).
+	UpdateSignerThumbprint string `yaml:"update_signer_thumbprint,omitempty"`
 }

@@ -33,6 +33,8 @@ func runGenConfig(args []string) error {
 	proxyURL := fs.String("proxy-url", "", "outbound HTTP/SOCKS proxy URL to route the agent's own connection through")
 	heartbeatInterval := fs.String("heartbeat-interval", "", "connection heartbeat interval, e.g. 30s (blank uses the SDK's default)")
 	heartbeatTolerance := fs.String("heartbeat-tolerance", "", "how long a missed heartbeat is tolerated before the connection is considered disconnected, e.g. 1m")
+	updateSourceURL := fs.String("update-source-url", "", "where the RPC-triggered self-update flow downloads a new installer from (Windows only); blank disables the feature. Requires --update-signer-thumbprint")
+	updateSignerThumbprint := fs.String("update-signer-thumbprint", "", `the SHA-1 or SHA-256 thumbprint of the certificate that must have signed whatever --update-source-url serves, as reported by PowerShell's (Get-AuthenticodeSignature path).SignerCertificate.Thumbprint. Required whenever --update-source-url is set — this, not who can reach the URL, is the actual safety gate`)
 
 	// Single-endpoint convenience flags — the common case.
 	upstream := fs.String("upstream", "", "single-endpoint shorthand: upstream address, e.g. localhost:8080 (mutually exclusive with --endpoint)")
@@ -67,17 +69,19 @@ func runGenConfig(args []string) error {
 	}
 
 	return writeConfig(genConfigOptions{
-		path:               *path,
-		description:        *description,
-		metadata:           *metadata,
-		logLevel:           *logLevel,
-		endpoints:          endpoints,
-		authtoken:          authtoken,
-		connectURL:         *connectURL,
-		connectCACertFile:  *connectCACertFile,
-		proxyURL:           *proxyURL,
-		heartbeatInterval:  *heartbeatInterval,
-		heartbeatTolerance: *heartbeatTolerance,
+		path:                   *path,
+		description:            *description,
+		metadata:               *metadata,
+		logLevel:               *logLevel,
+		endpoints:              endpoints,
+		authtoken:              authtoken,
+		connectURL:             *connectURL,
+		connectCACertFile:      *connectCACertFile,
+		proxyURL:               *proxyURL,
+		heartbeatInterval:      *heartbeatInterval,
+		heartbeatTolerance:     *heartbeatTolerance,
+		updateSourceURL:        *updateSourceURL,
+		updateSignerThumbprint: *updateSignerThumbprint,
 	})
 }
 
@@ -198,13 +202,14 @@ func resolveAPIKey() (string, error) {
 // adding the connection-level fields below as more bare strings would
 // make call sites error-prone to read and easy to mis-order.
 type genConfigOptions struct {
-	path                                  string
-	description, metadata, logLevel       string
-	endpoints                             []config.Endpoint
-	authtoken                             string
-	connectURL, connectCACertFile         string
-	proxyURL                              string
-	heartbeatInterval, heartbeatTolerance string
+	path                                    string
+	description, metadata, logLevel         string
+	endpoints                               []config.Endpoint
+	authtoken                               string
+	connectURL, connectCACertFile           string
+	proxyURL                                string
+	heartbeatInterval, heartbeatTolerance   string
+	updateSourceURL, updateSignerThumbprint string
 }
 
 func writeConfig(opts genConfigOptions) error {
@@ -221,12 +226,14 @@ func writeConfig(opts genConfigOptions) error {
 			Provider: "static",
 			Params:   map[string]string{"authtoken": opts.authtoken},
 		},
-		Endpoints:          opts.endpoints,
-		ConnectURL:         opts.connectURL,
-		ConnectCACertFile:  opts.connectCACertFile,
-		ProxyURL:           opts.proxyURL,
-		HeartbeatInterval:  opts.heartbeatInterval,
-		HeartbeatTolerance: opts.heartbeatTolerance,
+		Endpoints:              opts.endpoints,
+		ConnectURL:             opts.connectURL,
+		ConnectCACertFile:      opts.connectCACertFile,
+		ProxyURL:               opts.proxyURL,
+		HeartbeatInterval:      opts.heartbeatInterval,
+		HeartbeatTolerance:     opts.heartbeatTolerance,
+		UpdateSourceURL:        opts.updateSourceURL,
+		UpdateSignerThumbprint: opts.updateSignerThumbprint,
 	}
 	if err := config.Validate(cfg); err != nil {
 		return fmt.Errorf("generated config failed validation: %w", err)

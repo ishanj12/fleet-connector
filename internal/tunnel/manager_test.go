@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"sync"
 	"testing"
@@ -14,6 +16,7 @@ import (
 
 	"fleet-connector/internal/config"
 	"fleet-connector/internal/credentials"
+	"fleet-connector/internal/update"
 )
 
 // fakeForwarder is the minimal stand-in for ngrok.EndpointForwarder — only
@@ -287,4 +290,132 @@ func TestManagerStopBeforeStartIsNoop(t *testing.T) {
 	if err := m.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop before Start should be a no-op, got: %v", err)
 	}
+}
+
+// withGOOS temporarily overrides the goos var (see rpc.go) so a test can
+// simulate running on Windows regardless of the platform actually running
+// the test suite — the self-update mechanism is Windows-only, so this is
+// the only way to exercise handleUpdate's real branch in CI on other OSes.
+func withGOOS(t *testing.T, value string) {
+	t.Helper()
+	original := goos
+	goos = value
+	t.Cleanup(func() { goos = original })
+}
+
+func TestManagerRPCUpdateIgnoredWhenNotConfigured(t *testing.T) {
+	withGOOS(t, "windows")
+	ff := &fakeFactory{agents: []*fakeAgent{{}}}
+	cfg := testConfig(t, config.Endpoint{Upstream: config.Upstream{URL: "localhost:8080"}})
+	// cfg.UpdateSourceURL deliberately left empty.
+	m, err := NewManager(cfg, credentials.StaticProvider{}, ff.factory, nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	rec := &updateRecorder{}
+	m.updater = update.New(nil, rec.verify, rec.launch)
+
+	if _, err := m.handleRPC(context.Background(), nil, fakeRPCRequest{method: rpc.UpdateAgentMethod}); err != nil {
+		t.Fatalf("handleRPC: %v", err)
+	}
+
+	// handleUpdate's own early return happens synchronously, before any
+	// goroutine is spawned, so there's nothing to race against here.
+	if rec.callCount() != 0 {
+		t.Errorf("expected no verify/launch calls with update_source_url unset, got %d", rec.callCount())
+	}
+}
+
+func TestManagerRPCUpdateIgnoredOnNonWindows(t *testing.T) {
+	withGOOS(t, "linux")
+	ff := &fakeFactory{agents: []*fakeAgent{{}}}
+	cfg := testConfig(t, config.Endpoint{Upstream: config.Upstream{URL: "localhost:8080"}})
+	cfg.UpdateSourceURL = "http://example.invalid/installer.msi"
+	m, err := NewManager(cfg, credentials.StaticProvider{}, ff.factory, nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	rec := &updateRecorder{}
+	m.updater = update.New(nil, rec.verify, rec.launch)
+
+	if _, err := m.handleRPC(context.Background(), nil, fakeRPCRequest{method: rpc.UpdateAgentMethod}); err != nil {
+		t.Fatalf("handleRPC: %v", err)
+	}
+
+	if rec.callCount() != 0 {
+		t.Errorf("expected no verify/launch calls on a non-Windows platform, got %d", rec.callCount())
+	}
+}
+
+func TestManagerRPCUpdateAppliesOnWindows(t *testing.T) {
+	withGOOS(t, "windows")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("fake installer bytes"))
+	}))
+	defer srv.Close()
+
+	ff := &fakeFactory{agents: []*fakeAgent{{}}}
+	cfg := testConfig(t, config.Endpoint{Upstream: config.Upstream{URL: "localhost:8080"}})
+	cfg.UpdateSourceURL = srv.URL
+	m, err := NewManager(cfg, credentials.StaticProvider{}, ff.factory, nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	rec := &updateRecorder{}
+	m.updater = update.New(nil, rec.verify, rec.launch)
+
+	if _, err := m.handleRPC(context.Background(), nil, fakeRPCRequest{method: rpc.UpdateAgentMethod}); err != nil {
+		t.Fatalf("handleRPC: %v", err)
+	}
+
+	// Apply runs in its own goroutine (see handleUpdate) — poll for the
+	// launch call rather than assuming it's already happened by the time
+	// handleRPC returns.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && rec.callCount() < 2 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if rec.launched() != 1 {
+		t.Fatalf("expected launch to be called exactly once, got %d", rec.launched())
+	}
+}
+
+// updateRecorder is manager_test.go's own minimal stand-in for
+// internal/update's recorder (unexported there, so not reusable directly
+// across packages) — just enough to confirm whether/how many times
+// verify/launch were invoked by code reached through Manager's RPC wiring.
+type updateRecorder struct {
+	mu           sync.Mutex
+	verifyCalls  int
+	launchCallsN int
+}
+
+func (r *updateRecorder) verify(path string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.verifyCalls++
+	return nil
+}
+
+func (r *updateRecorder) launch(path string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.launchCallsN++
+	return nil
+}
+
+func (r *updateRecorder) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.verifyCalls + r.launchCallsN
+}
+
+func (r *updateRecorder) launched() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.launchCallsN
 }

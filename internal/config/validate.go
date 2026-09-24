@@ -47,7 +47,10 @@ var validLogLevels = map[string]bool{
 // parses as PEM; ProxyURL (if set) parses as a URL;
 // HeartbeatInterval/HeartbeatTolerance (if set) parse via
 // time.ParseDuration; ConnectCACertFile (if set) exists and parses as PEM;
-// Credential.Provider set; LogLevel (if set) is debug/info/warn/error.
+// Credential.Provider set; LogLevel (if set) is debug/info/warn/error;
+// UpdateSourceURL (if set) parses as a URL and requires
+// UpdateSignerThumbprint to also be set; UpdateSignerThumbprint (if set)
+// is a 40- or 64-character hex string.
 func Validate(cfg Config) error {
 	if cfg.SchemaVersion != CurrentSchemaVersion {
 		return fmt.Errorf("unsupported schema_version %d (expected %d)", cfg.SchemaVersion, CurrentSchemaVersion)
@@ -119,8 +122,38 @@ func Validate(cfg Config) error {
 			return err
 		}
 	}
+	if cfg.UpdateSourceURL != "" {
+		if _, err := url.Parse(cfg.UpdateSourceURL); err != nil {
+			return fmt.Errorf("update_source_url: %w", err)
+		}
+		// Required, not optional, once update_source_url is set — checking
+		// only that *some* certificate signed the download isn't a
+		// meaningful safety gate (see update_signer_thumbprint's own doc
+		// comment), so the feature refuses to even validate as "on"
+		// without it, rather than silently falling back to a weaker check.
+		if cfg.UpdateSignerThumbprint == "" {
+			return errors.New("update_signer_thumbprint is required when update_source_url is set")
+		}
+	}
+	if cfg.UpdateSignerThumbprint != "" {
+		if !isHexThumbprint(cfg.UpdateSignerThumbprint) {
+			return fmt.Errorf("update_signer_thumbprint must be a 40-character (SHA-1) or 64-character (SHA-256) hex string, got %q", cfg.UpdateSignerThumbprint)
+		}
+	}
 
 	return nil
+}
+
+func isHexThumbprint(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return false
+		}
+	}
+	return true
 }
 
 func validatePEMFile(field, path string) error {

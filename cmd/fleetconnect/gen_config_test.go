@@ -119,4 +119,59 @@ func TestGenConfigConnectionSettingsOmittedByDefault(t *testing.T) {
 	if cfg.ConnectURL != "" || cfg.ConnectCACertFile != "" || cfg.ProxyURL != "" || cfg.HeartbeatInterval != "" || cfg.HeartbeatTolerance != "" {
 		t.Errorf("expected all connection-level fields empty by default, got: %+v", cfg)
 	}
+	if cfg.UpdateSourceURL != "" || cfg.UpdateSignerThumbprint != "" {
+		t.Errorf("expected update settings empty by default, got: %+v", cfg)
+	}
+}
+
+// TestGenConfigUpdateSettings covers --update-source-url and
+// --update-signer-thumbprint — previously gen-config had no way to set
+// either, meaning the only way to enable the self-update feature was
+// hand-editing the generated file afterward.
+func TestGenConfigUpdateSettings(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "config.yaml")
+	thumbprint := "AABBCCDDEEFF00112233445566778899AABBCCDD"
+
+	err := runGenConfig([]string{
+		"--path", outPath,
+		"--description", "update-settings-test",
+		"--upstream", "localhost:8080",
+		"--authtoken", "fake_token_gen_config",
+		"--update-source-url", "https://updates.example.com/agent.msi",
+		"--update-signer-thumbprint", thumbprint,
+	})
+	if err != nil {
+		t.Fatalf("runGenConfig: %v", err)
+	}
+
+	cfg, err := local.New(outPath).Load(t.Context())
+	if err != nil {
+		t.Fatalf("load written config: %v", err)
+	}
+	if cfg.UpdateSourceURL != "https://updates.example.com/agent.msi" {
+		t.Errorf("UpdateSourceURL = %q", cfg.UpdateSourceURL)
+	}
+	if cfg.UpdateSignerThumbprint != thumbprint {
+		t.Errorf("UpdateSignerThumbprint = %q, want %q", cfg.UpdateSignerThumbprint, thumbprint)
+	}
+}
+
+// TestGenConfigUpdateSourceURLRequiresThumbprint confirms gen-config itself
+// rejects the same incomplete configuration config.Validate would — setting
+// --update-source-url without --update-signer-thumbprint fails at
+// generation time instead of producing a config.yaml that only fails later,
+// when the agent actually tries to use it.
+func TestGenConfigUpdateSourceURLRequiresThumbprint(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "config.yaml")
+
+	err := runGenConfig([]string{
+		"--path", outPath,
+		"--description", "update-missing-thumbprint",
+		"--upstream", "localhost:8080",
+		"--authtoken", "fake_token_gen_config",
+		"--update-source-url", "https://updates.example.com/agent.msi",
+	})
+	if err == nil {
+		t.Fatal("expected an error when --update-source-url is set without --update-signer-thumbprint")
+	}
 }

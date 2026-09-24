@@ -354,3 +354,55 @@ func TestValidateConnectCACertFileMustBeValidPEM(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateUpdateSourceURLRequiresSignerThumbprint(t *testing.T) {
+	sha1Thumbprint := strings.Repeat("a", 40)
+
+	cfg := validConfig()
+	cfg.UpdateSourceURL = "https://updates.example.com/agent.msi"
+	// UpdateSignerThumbprint deliberately left unset.
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected an error when update_source_url is set without update_signer_thumbprint")
+	} else if !strings.Contains(err.Error(), "update_signer_thumbprint") {
+		t.Errorf("error should mention update_signer_thumbprint, got: %v", err)
+	}
+
+	cfg.UpdateSignerThumbprint = sha1Thumbprint
+	if err := Validate(cfg); err != nil {
+		t.Errorf("update_source_url with a valid update_signer_thumbprint should pass, got: %v", err)
+	}
+}
+
+func TestValidateUpdateSourceURLMustParse(t *testing.T) {
+	cfg := validConfig()
+	cfg.UpdateSourceURL = ":not a url:"
+	cfg.UpdateSignerThumbprint = strings.Repeat("a", 40)
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected an error for a malformed update_source_url")
+	}
+}
+
+func TestValidateUpdateSignerThumbprintFormat(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{"40-char hex (SHA-1)", strings.Repeat("a", 40), false},
+		{"64-char hex (SHA-256)", strings.Repeat("a", 64), false},
+		{"uppercase hex", strings.Repeat("A", 40), false},
+		{"too short", strings.Repeat("a", 39), true},
+		{"too long", strings.Repeat("a", 41), true},
+		{"non-hex characters", strings.Repeat("z", 40), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.UpdateSourceURL = "https://updates.example.com/agent.msi"
+			cfg.UpdateSignerThumbprint = tc.value
+			err := Validate(cfg)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("thumbprint %q: err=%v, wantErr=%v", tc.value, err, tc.wantErr)
+			}
+		})
+	}
+}

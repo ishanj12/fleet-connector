@@ -13,6 +13,7 @@ import (
 
 	"fleet-connector/internal/config"
 	"fleet-connector/internal/credentials"
+	"fleet-connector/internal/update"
 )
 
 type Manager struct {
@@ -21,9 +22,10 @@ type Manager struct {
 	factory AgentFactory
 	log     *slog.Logger
 
-	connectCAs         *x509.CertPool // parsed from cfg.ConnectCACertFile once in NewManager, not re-read per retry
-	heartbeatInterval  time.Duration  // parsed from cfg.HeartbeatInterval by NewManager
-	heartbeatTolerance time.Duration  // parsed from cfg.HeartbeatTolerance by NewManager
+	connectCAs         *x509.CertPool  // parsed from cfg.ConnectCACertFile once in NewManager, not re-read per retry
+	heartbeatInterval  time.Duration   // parsed from cfg.HeartbeatInterval by NewManager
+	heartbeatTolerance time.Duration   // parsed from cfg.HeartbeatTolerance by NewManager
+	updater            *update.Applier // handles UpdateAgentMethod RPCs, see rpc.go
 
 	mu               sync.RWMutex
 	status           Status
@@ -52,6 +54,7 @@ func NewManager(cfg config.Config, creds credentials.Provider, factory AgentFact
 	return &Manager{
 		cfg: cfg, creds: creds, factory: factory, log: log,
 		connectCAs: connectCAs, heartbeatInterval: heartbeatInterval, heartbeatTolerance: heartbeatTolerance,
+		updater:       update.New(log, update.DefaultVerify(cfg.UpdateSignerThumbprint), update.DefaultLaunch),
 		restart:       make(chan struct{}, 1),
 		stopRequested: make(chan struct{}),
 	}, nil

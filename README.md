@@ -169,6 +169,64 @@ export FLEETCONNECT_NGROK_API_KEY="<your ngrok API key>"
 ./fleetconnect gen-config --description "store-042" --upstream localhost:8080
 ```
 
+## Remote updates (Windows only)
+
+fleet-connector can update itself in place when triggered remotely — via
+ngrok's dashboard, or the Tunnel Sessions API's `update` operation — instead
+of requiring physical or remote-desktop access to every machine for every
+release. Disabled by default; enable it with two required flags:
+
+```sh
+./fleetconnect gen-config \
+  --description "store-042" \
+  --upstream localhost:8080 \
+  --authtoken "<your authtoken>" \
+  --update-source-url "https://updates.example.com/latest/fleetconnect.msi" \
+  --update-signer-thumbprint "AABBCCDDEEFF00112233445566778899AABBCCDD"
+```
+
+(`update_source_url`/`update_signer_thumbprint` in `config.yaml`, or the
+setup wizard's "Advanced connection settings," work the same way.)
+
+**How it works:** the RPC arrives over the agent's existing connection (no
+new inbound/outbound rule needed) → the agent downloads whatever
+`--update-source-url` points at → verifies its signature → launches it
+silently, detached from the current process, since the installer's own
+upgrade logic is about to stop the very service running this code.
+Windows-only today — the RPC itself arrives on any platform, but the
+download/verify/launch mechanism assumes an MSI and Windows Authenticode
+signing (see `internal/update`).
+
+**`--update-signer-thumbprint` is not optional decoration — it's the actual
+safety gate.** `gen-config` and `config.Validate` both refuse to enable the
+feature without it. This matters because `--update-source-url` will often
+end up being a plain, unauthenticated location in practice: an unattended
+agent can't complete an interactive SSO/MFA login the way a human fetching
+the same file could, so access control on the download itself usually isn't
+an option. The thumbprint check — confirming the file is signed by *this
+specific* certificate, not just *some* validly-issued one — is what makes
+that safe. Get the value by running
+`(Get-AuthenticodeSignature path).SignerCertificate.Thumbprint` in
+PowerShell against your own signed installer.
+
+**Use one signing certificate, permanently.** Don't rotate it casually.
+Every release still needs to match `update_signer_thumbprint`, so switching
+certificates means updating every deployed config alongside the new
+release — and separately, Windows' own reputation systems (SmartScreen and
+similar) treat a certificate switch as starting over from zero trust,
+independent of anything to do with this feature. A renewed certificate
+(same identity, continuous history) keeps accumulated reputation; a brand
+new one doesn't.
+
+**One thing this can't fix, no matter how it's configured:** EDR/antivirus
+products commonly detect ngrok usage by watching for connections to ngrok's
+own infrastructure (domains, protocol-level fingerprints), not just by
+recognizing the stock `ngrok.exe` binary. Building on the SDK avoids the
+latter, but not the former — that risk is inherent to using ngrok's cloud
+at all, and no code change here removes it. The actual mitigation is
+getting your signing certificate allowlisted with each deployment's IT/EDR
+team ahead of time, not a configuration setting.
+
 ## Installing on Windows
 
 The commands below are PowerShell, run **on the Windows machine** — clone
@@ -335,6 +393,7 @@ internal/agent/        App lifecycle (Start/Stop/Status)
 internal/config/       Config schema, validation, the local file-based Source
 internal/credentials/  Pluggable credential provider (StaticProvider by default)
 internal/tunnel/       Manager — the supervisory reconnect loop wrapping the ngrok SDK
+internal/update/       Remote self-update: download, verify (Authenticode), launch (Windows only)
 internal/wizard/       The local setup wizard's web UI
 internal/logging/      Structured logging, per-platform sinks
 installer/             MSI (WiX) and Linux (.deb/.rpm/tarball) packaging
