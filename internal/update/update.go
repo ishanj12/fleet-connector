@@ -172,6 +172,46 @@ func (a *Applier) Apply(ctx context.Context, sourceURL string) error {
 	return nil
 }
 
+// retryAttempts is how many total attempts ApplyWithRetry makes before
+// giving up. A signature-verification failure is deterministic — the same
+// wrong file will keep failing the same way — but retrying it anyway is
+// harmless at this attempt count and avoids having to classify errors by
+// type here; a download or launch failure is often transient (a network
+// blip, a momentary AV/msiexec lock) and genuinely benefits from another
+// try. Package vars, not consts, so tests can shrink them rather than
+// waiting through real backoff delays.
+var retryAttempts = 3
+
+// retryBaseDelay is the backoff before the second attempt; each later
+// attempt doubles it.
+var retryBaseDelay = 30 * time.Second
+
+// ApplyWithRetry calls Apply up to retryAttempts times with exponential
+// backoff between attempts, stopping early if ctx is canceled. Production
+// callers (see internal/tunnel/rpc.go) use this; Apply itself stays a
+// single attempt so its own tests can exercise sequencing directly without
+// a retry loop in the way.
+func (a *Applier) ApplyWithRetry(ctx context.Context, sourceURL string) error {
+	var err error
+	delay := retryBaseDelay
+	for attempt := 1; attempt <= retryAttempts; attempt++ {
+		if err = a.Apply(ctx, sourceURL); err == nil {
+			return nil
+		}
+		if attempt == retryAttempts {
+			break
+		}
+		a.log.Warn("update attempt failed, retrying", "attempt", attempt, "of", retryAttempts, "delay", delay, "error", err)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return fmt.Errorf("update canceled after %d attempt(s): %w", attempt, err)
+		}
+		delay *= 2
+	}
+	return fmt.Errorf("update failed after %d attempts: %w", retryAttempts, err)
+}
+
 // download fetches sourceURL to a temp file and returns its path. The
 // caller owns cleanup (Apply always removes it, verified or not).
 func (a *Applier) download(ctx context.Context, sourceURL string) (string, error) {

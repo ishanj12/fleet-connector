@@ -69,7 +69,7 @@ func (m *Manager) handleUpdate() {
 	// attempt can't block handleRPC (and, by extension, the SDK's own
 	// session-handling loop that calls it).
 	go func() {
-		if err := m.updater.Apply(context.Background(), m.cfg.UpdateSourceURL); err != nil {
+		if err := m.updater.ApplyWithRetry(context.Background(), m.cfg.UpdateSourceURL); err != nil {
 			m.log.Error("self-update failed", "error", err)
 		}
 	}()

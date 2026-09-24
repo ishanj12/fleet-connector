@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // recorder captures what verify/launch were called with, and lets a test
@@ -183,6 +184,104 @@ func TestApplyFallsBackToGenericHintWhenDiagnosisEmpty(t *testing.T) {
 	}
 	if len(rec.diagnoseCalls) != 1 {
 		t.Errorf("expected diagnose to be called once, got %d calls", len(rec.diagnoseCalls))
+	}
+}
+
+// withRetryPolicy temporarily shrinks retryAttempts/retryBaseDelay so a test
+// exercises real retry looping without waiting through real backoff delays.
+func withRetryPolicy(t *testing.T, attempts int, delay time.Duration) {
+	t.Helper()
+	origAttempts, origDelay := retryAttempts, retryBaseDelay
+	retryAttempts, retryBaseDelay = attempts, delay
+	t.Cleanup(func() { retryAttempts, retryBaseDelay = origAttempts, origDelay })
+}
+
+func TestApplyWithRetrySucceedsAfterTransientFailures(t *testing.T) {
+	withRetryPolicy(t, 3, time.Millisecond)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("fake installer bytes"))
+	}))
+	defer srv.Close()
+
+	var launchCalls int
+	verify := func(path string) error { return nil }
+	launch := func(path string) error {
+		launchCalls++
+		if launchCalls < 3 {
+			return errors.New("transient failure")
+		}
+		return nil
+	}
+	diagnose := func(path string) string { return "" }
+
+	a := New(nil, verify, launch, diagnose)
+	if err := a.ApplyWithRetry(context.Background(), srv.URL); err != nil {
+		t.Fatalf("expected ApplyWithRetry to eventually succeed, got: %v", err)
+	}
+	if launchCalls != 3 {
+		t.Errorf("expected 3 launch attempts before succeeding, got %d", launchCalls)
+	}
+}
+
+func TestApplyWithRetryGivesUpAfterMaxAttempts(t *testing.T) {
+	withRetryPolicy(t, 2, time.Millisecond)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("fake installer bytes"))
+	}))
+	defer srv.Close()
+
+	var launchCalls int
+	verify := func(path string) error { return nil }
+	launch := func(path string) error {
+		launchCalls++
+		return errors.New("permanent failure")
+	}
+	diagnose := func(path string) string { return "" }
+
+	a := New(nil, verify, launch, diagnose)
+	err := a.ApplyWithRetry(context.Background(), srv.URL)
+	if err == nil {
+		t.Fatal("expected ApplyWithRetry to give up and return an error")
+	}
+	if !strings.Contains(err.Error(), "update failed after 2 attempts") {
+		t.Errorf("expected error to report the attempt count, got: %v", err)
+	}
+	if launchCalls != 2 {
+		t.Errorf("expected exactly 2 launch attempts, got %d", launchCalls)
+	}
+}
+
+func TestApplyWithRetryStopsOnContextCancellation(t *testing.T) {
+	withRetryPolicy(t, 5, 50*time.Millisecond)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("fake installer bytes"))
+	}))
+	defer srv.Close()
+
+	var launchCalls int
+	verify := func(path string) error { return nil }
+	launch := func(path string) error {
+		launchCalls++
+		return errors.New("permanent failure")
+	}
+	diagnose := func(path string) string { return "" }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	a := New(nil, verify, launch, diagnose)
+	err := a.ApplyWithRetry(ctx, srv.URL)
+	if err == nil {
+		t.Fatal("expected ApplyWithRetry to return an error when the context is canceled")
+	}
+	if !strings.Contains(err.Error(), "canceled") {
+		t.Errorf("expected error to mention cancellation, got: %v", err)
+	}
+	if launchCalls != 1 {
+		t.Errorf("expected exactly 1 launch attempt before cancellation stopped the retry loop, got %d", launchCalls)
 	}
 }
 
