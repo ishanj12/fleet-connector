@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -75,6 +76,27 @@ func TestApplyDownloadsVerifiesAndLaunches(t *testing.T) {
 	data, err := os.ReadFile(rec.verifyCalls[0])
 	if err == nil {
 		t.Errorf("downloaded file %q should have been removed after Apply returned, but still exists with content %q", rec.verifyCalls[0], data)
+	}
+}
+
+func TestApplyRecordsMarkerWhenConfigured(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("fake installer bytes"))
+	}))
+	defer srv.Close()
+
+	markerPath := filepath.Join(t.TempDir(), "update-marker.json")
+	rec := &recorder{}
+	a := New(nil, rec.verify, rec.launch, rec.diagnose)
+	a.MarkerPath = markerPath
+	a.Version = "1.0.0"
+
+	if err := a.Apply(context.Background(), srv.URL); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Errorf("expected Apply to write a marker at %q, stat err: %v", markerPath, err)
 	}
 }
 

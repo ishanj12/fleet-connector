@@ -20,6 +20,8 @@ import (
 	"fleet-connector/internal/credentials"
 	"fleet-connector/internal/logging"
 	"fleet-connector/internal/tunnel"
+	"fleet-connector/internal/update"
+	"fleet-connector/internal/version"
 	"fleet-connector/internal/wizard"
 )
 
@@ -67,6 +69,7 @@ func runForeground() {
 	}
 	defer platformHandler.Close()
 	log, level := logging.New(defaultLogPath(), platformHandler)
+	update.ReportPreviousAttempt(update.DefaultMarkerPath(), version.Version, log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

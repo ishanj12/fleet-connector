@@ -14,6 +14,7 @@ import (
 	"fleet-connector/internal/config"
 	"fleet-connector/internal/credentials"
 	"fleet-connector/internal/update"
+	"fleet-connector/internal/version"
 )
 
 type Manager struct {
@@ -51,10 +52,13 @@ func NewManager(cfg config.Config, creds credentials.Provider, factory AgentFact
 	if err != nil {
 		return nil, err
 	}
+	updater := update.New(log, update.DefaultVerify(cfg.UpdateSignerThumbprint), update.DefaultLaunch, update.DefaultDiagnose)
+	updater.MarkerPath = update.DefaultMarkerPath()
+	updater.Version = version.Version
 	return &Manager{
 		cfg: cfg, creds: creds, factory: factory, log: log,
 		connectCAs: connectCAs, heartbeatInterval: heartbeatInterval, heartbeatTolerance: heartbeatTolerance,
-		updater:       update.New(log, update.DefaultVerify(cfg.UpdateSignerThumbprint), update.DefaultLaunch, update.DefaultDiagnose),
+		updater:       updater,
 		restart:       make(chan struct{}, 1),
 		stopRequested: make(chan struct{}),
 	}, nil

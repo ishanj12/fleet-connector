@@ -227,6 +227,34 @@ at all, and no code change here removes it. The actual mitigation is
 getting your signing certificate allowlisted with each deployment's IT/EDR
 team ahead of time, not a configuration setting.
 
+**If an update attempt fails:** the agent already retries a failed download,
+verify, or launch a few times with backoff before giving up (see
+`internal/update.ApplyWithRetry`) — a transient network blip or a momentary
+AV/`msiexec` lock doesn't require waiting for the next dashboard-triggered
+attempt. If it still fails and looks like a generic OS-level error (access
+denied, file not found), that's frequently AV/EDR quarantining or blocking
+the file rather than a real bug — when the installer itself gets that far
+before failing, the agent checks Windows Defender's own detection log
+(`Get-MpThreatDetection`) and names the specific threat it flagged, if any,
+in the error it logs.
+
+**Confirming an update actually took effect:** a successful installer
+*launch* doesn't guarantee the install itself succeeded — the MSI can still
+fail silently afterward. To get a real yes/no on the next startup, inject a
+build identifier at compile time:
+
+```sh
+go build -ldflags "-X fleet-connector/internal/version.Version=1.2.3" -o fleetconnect.exe ./cmd/fleetconnect
+```
+
+With `internal/version.Version` set, a successful installer launch records
+a marker noting the version that was running right before the update; the
+next process startup compares its own version against that marker and logs
+either `self-update succeeded` (versions differ) or `self-update does not
+appear to have taken effect` (they don't), then removes the marker either
+way. Leave `Version` unset and this check is skipped entirely, rather than
+reporting a false negative on every successful update.
+
 ## Installing on Windows
 
 The commands below are PowerShell, run **on the Windows machine** — clone
@@ -394,6 +422,7 @@ internal/config/       Config schema, validation, the local file-based Source
 internal/credentials/  Pluggable credential provider (StaticProvider by default)
 internal/tunnel/       Manager — the supervisory reconnect loop wrapping the ngrok SDK
 internal/update/       Remote self-update: download, verify (Authenticode), launch (Windows only)
+internal/version/      Build-time version identifier, used to confirm self-updates took effect
 internal/wizard/       The local setup wizard's web UI
 internal/logging/      Structured logging, per-platform sinks
 installer/             MSI (WiX) and Linux (.deb/.rpm/tarball) packaging

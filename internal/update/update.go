@@ -125,6 +125,17 @@ type Applier struct {
 	verify     VerifyFunc
 	launch     LaunchFunc
 	diagnose   DiagnoseFunc
+
+	// MarkerPath and Version are both optional (empty = disabled) and are
+	// set directly by the caller after New, not New's own parameters —
+	// unlike verify/launch/diagnose, most callers won't have a build-time
+	// Version wired up (see internal/version), so there's nothing
+	// meaningful for New to default them to. When both are set, a
+	// successful launch records a marker (see RecordAttempt) that a later
+	// process startup can check via ReportPreviousAttempt to confirm the
+	// update actually took effect.
+	MarkerPath string
+	Version    string
 }
 
 // New builds an Applier. verify/launch/diagnose are almost always
@@ -168,6 +179,12 @@ func (a *Applier) Apply(ctx context.Context, sourceURL string) error {
 			return fmt.Errorf("launch installer: %w (Windows Defender detected %q on this file — get your signing certificate allowlisted, see the README's remote-update section)", err, detail)
 		}
 		return fmt.Errorf("launch installer: %w (%s)", err, avHint)
+	}
+
+	if a.MarkerPath != "" && a.Version != "" {
+		if err := RecordAttempt(a.MarkerPath, sourceURL, a.Version); err != nil {
+			a.log.Warn("failed to record update marker for later confirmation", "error", err)
+		}
 	}
 	return nil
 }

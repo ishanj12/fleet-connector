@@ -13,6 +13,8 @@ import (
 	"fleet-connector/internal/config/local"
 	"fleet-connector/internal/credentials"
 	"fleet-connector/internal/logging"
+	"fleet-connector/internal/update"
+	"fleet-connector/internal/version"
 )
 
 // runAsWindowsServiceIfApplicable runs the app under the Windows SCM if
@@ -53,6 +55,7 @@ func (h *windowsServiceHandler) Execute(_ []string, r <-chan svc.ChangeRequest, 
 	}
 	defer platformHandler.Close()
 	log, level := logging.New(defaultLogPath(), platformHandler)
+	update.ReportPreviousAttempt(update.DefaultMarkerPath(), version.Version, log)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
