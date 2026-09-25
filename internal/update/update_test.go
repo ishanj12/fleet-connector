@@ -73,9 +73,8 @@ func TestApplyDownloadsVerifiesAndLaunches(t *testing.T) {
 		t.Errorf("verify and launch should see the same downloaded path: verify=%q launch=%q", rec.verifyCalls[0], rec.launchCalls[0])
 	}
 
-	data, err := os.ReadFile(rec.verifyCalls[0])
-	if err == nil {
-		t.Errorf("downloaded file %q should have been removed after Apply returned, but still exists with content %q", rec.verifyCalls[0], data)
+	if _, err := os.ReadFile(rec.verifyCalls[0]); err != nil {
+		t.Errorf("downloaded file %q should still exist after a successful launch — launch's detached installer process may still be reading it: %v", rec.verifyCalls[0], err)
 	}
 }
 
@@ -115,6 +114,12 @@ func TestApplyRefusesToLaunchOnVerifyFailure(t *testing.T) {
 	}
 	if len(rec.launchCalls) != 0 {
 		t.Fatalf("launch must never be called after a failed verification, but was called %d time(s)", len(rec.launchCalls))
+	}
+	if len(rec.verifyCalls) != 1 {
+		t.Fatalf("expected exactly 1 verify call, got %d", len(rec.verifyCalls))
+	}
+	if _, err := os.ReadFile(rec.verifyCalls[0]); !os.IsNotExist(err) {
+		t.Errorf("downloaded file %q should have been removed after a failed verification, stat err: %v", rec.verifyCalls[0], err)
 	}
 }
 
@@ -161,6 +166,9 @@ func TestApplyPropagatesLaunchFailure(t *testing.T) {
 	}
 	if len(rec.verifyCalls) != 1 {
 		t.Errorf("verify should still have been called once before the launch failure, got %d calls", len(rec.verifyCalls))
+	}
+	if _, err := os.ReadFile(rec.verifyCalls[0]); !os.IsNotExist(err) {
+		t.Errorf("downloaded file %q should have been removed after a failed launch, stat err: %v", rec.verifyCalls[0], err)
 	}
 }
 

@@ -157,8 +157,15 @@ func New(log *slog.Logger, verify VerifyFunc, launch LaunchFunc, diagnose Diagno
 }
 
 // Apply downloads the installer at sourceURL, verifies it, and launches it.
-// The downloaded file is always removed afterward, including on a
-// verification failure, so a rejected file never lingers on disk.
+// The downloaded file is removed on a verification or launch failure, so a
+// rejected file never lingers on disk. A *successful* launch deliberately
+// leaves it in place: LaunchFunc (see launch_windows.go) starts the
+// installer detached and returns immediately, without waiting for it to
+// finish — msiexec is still reading this exact file from a separate,
+// racing process. Deleting it here raced msiexec's own read and lost
+// (confirmed live: the file was already gone by the time msiexec's
+// transaction began, and the install silently did nothing), so the file
+// is left for the OS's own temp-directory cleanup instead.
 func (a *Applier) Apply(ctx context.Context, sourceURL string) error {
 	path, err := a.download(ctx, sourceURL)
 	if err != nil {
@@ -167,14 +174,15 @@ func (a *Applier) Apply(ctx context.Context, sourceURL string) error {
 		// AV-product-agnostic hint rather than a DiagnoseFunc call.
 		return fmt.Errorf("download %s: %w (%s)", sourceURL, err, avHint)
 	}
-	defer os.Remove(path)
 
 	if err := a.verify(path); err != nil {
+		os.Remove(path)
 		return fmt.Errorf("signature verification failed, refusing to install: %w", err)
 	}
 	a.log.Info("update signature verified, launching installer")
 
 	if err := a.launch(path); err != nil {
+		os.Remove(path)
 		if detail := a.diagnose(path); detail != "" {
 			return fmt.Errorf("launch installer: %w (Windows Defender detected %q on this file — get your signing certificate allowlisted, see the README's remote-update section)", err, detail)
 		}
